@@ -23,16 +23,18 @@ internal static class VirtualDesktop
             SetPaths(remaining, modes, SaveToDatabase);
     }
 
-    internal static async Task<Lease> AttachAsync(Size size, Target[] assigned, Point? preferred, CancellationToken cancellation)
+    internal static async Task<Lease> AttachAsync(Size size, Target[] assigned, Point? preferred,
+        uint? monitorId, CancellationToken cancellation)
     {
         var (paths, modes) = ReadPaths(1);
         var existing = paths.Where(IsActive).ToArray();
-        var pending = existing.FirstOrDefault(path => !assigned.Contains(path.Target.Key) && IsVirtual(path));
-        if (!IsActive(pending))
-            pending = paths.FirstOrDefault(path => !IsActive(path) && path.Target.Available != 0 &&
-                !existing.Any(current => current.Target.Key == path.Target.Key ||
-                    (current.Source.Adapter.Equals(path.Source.Adapter) && current.Source.Id == path.Source.Id)) &&
-                IsVirtual(path));
+        var pending = paths.Where(path => path.Target.Available != 0 && IsVirtual(path) &&
+                !assigned.Contains(path.Target.Key) &&
+                (IsActive(path) || !existing.Any(current => current.Target.Key == path.Target.Key ||
+                    (current.Source.Adapter.Equals(path.Source.Adapter) && current.Source.Id == path.Source.Id))))
+            .OrderByDescending(path => path.Target.Key.Id == monitorId)
+            .ThenByDescending(IsActive)
+            .FirstOrDefault();
         if (pending.Target.Available == 0)
             throw new InvalidOperationException("No unused virtual monitor is available.");
 

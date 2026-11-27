@@ -12,7 +12,7 @@ I wanted to extend my Windows desktop onto my Echo Show devices, which I had fla
 
 ## Downloads
 
-Get **OpenDesk-0.6.0-win-x64.zip** and **OpenDesk-Viewer-0.5.0.apk** from [Releases](https://github.com/Lostepic/OpenDesk/releases). The Windows download is self-contained. Version numbers differ because the Android viewer and host are released independently.
+Get **OpenDesk-0.7.2-win-x64.zip** and **OpenDesk-Viewer-0.7.1.apk** from [Releases](https://github.com/Lostepic/OpenDesk/releases). The Windows download is self-contained. The Windows 0.7.2 host and Android 0.7.1 viewer are compatible. Update both when upgrading from releases older than 0.7.0.
 
 ## Features
 
@@ -35,10 +35,10 @@ The Windows host shows connected viewers, display selection and streaming qualit
 
 1. On Windows 10 or 11, install the signed [Virtual Display Driver](https://github.com/VirtualDrivers/Virtual-Display-Driver) and configure a virtual monitor for each viewer. Add the Android device’s native resolution to its driver configuration when needed.
 2. Extract the Windows ZIP and open **OpenDesk.exe**. Select the network adapter connected to your devices.
-3. Install the APK on each Android 6.0 or later device with a working Android System WebView. Open **OpenDesk Viewer**, select your PC, and approve the initial connection on Windows.
+3. Install the viewer APK on Android 8.0 or later with Android System WebView. Open **OpenDesk Viewer**, select your PC, and compare the code shown under **Pair Android viewer** on Windows and tap **Code matches** on Android. Approve each device on Windows. Devices approved on older versions need to pair again.
 4. Arrange the new screens in Windows Display Settings. OpenDesk remembers the positions. Touch **Show controls** to reveal viewer controls in full-screen mode.
 
-The host and viewers need to be on the same local subnet. Allow the host on a Private Windows network for UDP 47825 and TCP 47825–47827. Browser sharing uses TCP 47824. Video, session credentials and touch input use unencrypted HTTP and WebSocket connections, so use a trusted network. Approved viewers can control Windows while touch control is enabled. Keep your Android app signing key private when building your own updates.
+The host and viewers need to be on the same local subnet. Allow the host on a Private Windows network for UDP 47825 and TCP 47825–47827. Browser sharing uses TCP 47824. In 0.7.0, pairing credentials, video and touch use TLS. The Android app verifies the host certificate against the certificate saved during pairing. Verify the same fingerprint before accepting the self-signed certificate in a browser. Discovery uses UDP to advertise the host and port. Earlier releases use unencrypted transport. Approved viewers can control Windows while touch control is enabled. Keep your Android app signing key private when building your own updates.
 
 ## Build
 

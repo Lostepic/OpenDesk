@@ -54,6 +54,7 @@ internal sealed class ViewerPreferences
 
     internal sealed class Viewer
     {
+        public uint? MonitorId { get; set; }
         public Position? Layout { get; set; }
         public bool Paused { get; set; }
     }

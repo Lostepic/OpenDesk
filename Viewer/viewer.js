@@ -172,7 +172,7 @@ function connect() {
   }
 
   show("connecting", "Connecting", "Connecting to your PC", "Waiting for the first frame.");
-  const connection = new WebSocket(`ws://${location.host}/stream`);
+  const connection = new WebSocket(`wss://${location.host}/stream`);
   socket = connection;
   let receiveTimeout;
   const expectFrame = () => {
@@ -181,6 +181,8 @@ function connect() {
   };
   expectFrame();
   connection.addEventListener("open", () => connection.send(key));
+  let pendingFrame;
+  let decoding = false;
   connection.addEventListener("message", async ({ data }) => {
     if (socket !== connection)
       return;
@@ -188,34 +190,42 @@ function connect() {
     if (!(data instanceof Blob))
       return;
 
-    const nextUrl = URL.createObjectURL(new Blob([data], { type: "image/jpeg" }));
-    const nextDisplay = standbyDisplay;
-    nextDisplay.src = nextUrl;
-    try {
-      await nextDisplay.decode();
-      if (socket !== connection || connection.readyState !== WebSocket.OPEN)
-        return;
-      const oldUrl = display.getAttribute("src");
-      if (oldUrl) URL.revokeObjectURL(oldUrl);
-      display.removeAttribute("src");
-      display.hidden = true;
-      standbyDisplay = display;
-      display = nextDisplay;
-      if (indicator.dataset.state !== "live")
-        show("live", "Live");
-      else
-        display.hidden = false;
-      const dimensions = `${display.naturalWidth} × ${display.naturalHeight}`;
-      if (resolution.textContent !== dimensions)
-        resolution.textContent = dimensions;
-      resolution.hidden = false;
-      connection.send("1");
-    } catch {
-      connection.close();
-    } finally {
-      if (socket !== connection || display !== nextDisplay)
-        URL.revokeObjectURL(nextUrl);
+    pendingFrame = data;
+    connection.send("1");
+    if (decoding)
+      return;
+    decoding = true;
+    while (pendingFrame && socket === connection && connection.readyState === WebSocket.OPEN) {
+      const nextUrl = URL.createObjectURL(new Blob([pendingFrame], { type: "image/jpeg" }));
+      pendingFrame = null;
+      const nextDisplay = standbyDisplay;
+      nextDisplay.src = nextUrl;
+      try {
+        await nextDisplay.decode();
+        if (socket !== connection || connection.readyState !== WebSocket.OPEN)
+          return;
+        const oldUrl = display.getAttribute("src");
+        if (oldUrl) URL.revokeObjectURL(oldUrl);
+        display.removeAttribute("src");
+        display.hidden = true;
+        standbyDisplay = display;
+        display = nextDisplay;
+        if (indicator.dataset.state !== "live")
+          show("live", "Live");
+        else
+          display.hidden = false;
+        const dimensions = `${display.naturalWidth} × ${display.naturalHeight}`;
+        if (resolution.textContent !== dimensions)
+          resolution.textContent = dimensions;
+        resolution.hidden = false;
+      } catch {
+        connection.close();
+      } finally {
+        if (socket !== connection || display !== nextDisplay)
+          URL.revokeObjectURL(nextUrl);
+      }
     }
+    decoding = false;
   });
   connection.addEventListener("close", ({ code }) => {
     clearTimeout(receiveTimeout);

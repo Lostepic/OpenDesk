@@ -5,7 +5,7 @@
     <UseWindowsForms>true</UseWindowsForms>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <Version>0.6.0</Version>
+    <Version>0.7.2</Version>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <AssemblyTitle>OpenDesk</AssemblyTitle>
     <Description>Share a Windows display with a browser on your local network.</Description>

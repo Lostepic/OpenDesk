@@ -97,7 +97,7 @@ internal sealed class ShareSession : IAsyncDisposable
         touch = allowTouch is null ? null : new TouchInput();
         latestDisplay = display;
         authority = $"{network.Address}:{port}";
-        origin = $"http://{authority}";
+        origin = $"https://{authority}";
     }
 
     internal string Invite => $"{origin}/#{key}";
@@ -117,7 +117,11 @@ internal sealed class ShareSession : IAsyncDisposable
             server.AddServerHeader = false;
             server.Limits.MaxRequestBodySize = 1024;
             server.Limits.RequestHeadersTimeout = TimeSpan.FromSeconds(5);
-            server.Listen(network.Address, port, listener => listener.Protocols = HttpProtocols.Http1);
+            server.Listen(network.Address, port, listener =>
+            {
+                listener.Protocols = HttpProtocols.Http1;
+                listener.UseHttps(HostCertificate.Certificate);
+            });
         });
         app = builder.Build();
         app.Use(async (context, next) =>
@@ -135,7 +139,7 @@ internal sealed class ShareSession : IAsyncDisposable
             context.Response.Headers["X-Content-Type-Options"] = "nosniff";
             context.Response.Headers["Content-Security-Policy"] =
                 $"default-src 'none'; script-src 'self'; style-src 'self'; img-src blob:; " +
-                $"connect-src 'self' ws://{authority}; base-uri 'none'; frame-ancestors 'none'; form-action 'none'";
+                $"connect-src 'self' wss://{authority}; base-uri 'none'; frame-ancestors 'none'; form-action 'none'";
             await next(context);
         });
         app.UseWebSockets(new WebSocketOptions

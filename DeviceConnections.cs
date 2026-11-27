@@ -26,7 +26,7 @@ internal sealed class DeviceConnections(NetworkChoice network, Func<IPAddress, T
     private readonly ConcurrentDictionary<int, Connection> active = new();
     private readonly CancellationTokenSource stopping = new();
     private readonly SemaphoreSlim approval = new(1);
-    private static readonly Regex DeviceKey = new("^[0-9a-f]{32}$", RegexOptions.CultureInvariant);
+    private static readonly Regex DeviceKey = new("^[0-9a-f]{64}$", RegexOptions.CultureInvariant);
     private static readonly Regex DeviceName = new(@"\A[A-Za-z0-9 ._()\-]{1,40}\z", RegexOptions.CultureInvariant);
     private WebApplication? server;
     private UdpClient? udp;
@@ -51,7 +51,11 @@ internal sealed class DeviceConnections(NetworkChoice network, Func<IPAddress, T
             options.AddServerHeader = false;
             options.Limits.MaxRequestBodySize = 256;
             options.Limits.RequestHeadersTimeout = TimeSpan.FromSeconds(5);
-            options.Listen(network.Address, Port, address => address.Protocols = HttpProtocols.Http1);
+            options.Listen(network.Address, Port, address =>
+            {
+                address.Protocols = HttpProtocols.Http1;
+                address.UseHttps(HostCertificate.Certificate);
+            });
         });
         server = builder.Build();
         server.MapGet("/identity", (HttpContext context) =>
@@ -150,7 +154,7 @@ internal sealed class DeviceConnections(NetworkChoice network, Func<IPAddress, T
             try
             {
                 lease = await VirtualDesktop.AttachAsync(GetSize(context),
-                    active.Values.Select(item => item.Monitor).ToArray(), saved.Layout?.ToPoint(), timeout.Token);
+                    active.Values.Select(item => item.Monitor).ToArray(), saved.Layout?.ToPoint(), saved.MonitorId, timeout.Token);
                 topologyError = null;
             }
             catch (Exception error) when (error is System.ComponentModel.Win32Exception or InvalidOperationException)
@@ -172,6 +176,11 @@ internal sealed class DeviceConnections(NetworkChoice network, Func<IPAddress, T
                 TryRestorePositions();
                 RefreshObservedPositions();
                 await stream.StartAsync();
+                if (saved.MonitorId is null)
+                {
+                    saved.MonitorId = lease.Monitor.Id;
+                    preferences.Save();
+                }
                 context.Response.Headers["Cache-Control"] = "no-store";
                 return Results.Text(stream.Invite);
             }
@@ -246,7 +255,7 @@ internal sealed class DeviceConnections(NetworkChoice network, Func<IPAddress, T
     {
         string deviceId = context.Request.Headers["X-OpenDesk-Device"].ToString();
         string sessionKey = context.Request.Headers["X-OpenDesk-Session"].ToString();
-        if (!IsDeviceRequest(context, deviceId) || !DeviceKey.IsMatch(sessionKey))
+        if (!IsDeviceRequest(context, deviceId) || sessionKey.Length != 32)
         {
             context.Response.StatusCode = 403;
             return Task.CompletedTask;

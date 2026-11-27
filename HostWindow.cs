@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Net;
+using System.Reflection;
 using Microsoft.Win32;
 
 namespace OpenDesk;
@@ -10,6 +11,9 @@ internal sealed class HostWindow : Form
     private static readonly Color Muted = Color.FromArgb(162, 185, 186);
     private static readonly Color Surface = Color.FromArgb(30, 47, 52);
     private static readonly Color Mint = Color.FromArgb(138, 239, 207);
+    private static readonly Color Card = Color.FromArgb(23, 38, 43);
+    private static readonly Color Line = Color.FromArgb(52, 71, 75);
+    private const string RepositoryUrl = "https://github.com/Lostepic/OpenDesk";
 
     private readonly ComboBox displays = Picker("Display");
     private readonly ComboBox networks = Picker("Network adapter");
@@ -58,43 +62,65 @@ internal sealed class HostWindow : Form
         ForeColor = Ink;
         Font = new Font("Segoe UI", 10F);
         AutoScaleMode = AutoScaleMode.Dpi;
-        ClientSize = new Size(640, 654);
+        ClientSize = new Size(680, 830);
         MinimumSize = new Size(560, 625);
         StartPosition = FormStartPosition.CenterScreen;
 
+        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2 };
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        Controls.Add(layout);
+
+        var scroll = new Panel { Dock = DockStyle.Fill, AutoScroll = true, Margin = Padding.Empty };
+        layout.Controls.Add(scroll, 0, 0);
         var body = new TableLayoutPanel
         {
-            Dock = DockStyle.Fill, AutoScroll = true, ColumnCount = 1,
-            Padding = new Padding(30, 24, 30, 22)
+            Dock = DockStyle.Top, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            ColumnCount = 1, Padding = new Padding(28, 20, 28, 12)
         };
         body.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        Controls.Add(body);
+        scroll.Controls.Add(body);
+        layout.Controls.Add(CreateFooter(), 0, 1);
         var title = TextLabel("OpenDesk", Ink);
         title.Font = new Font("Segoe UI", 29F, FontStyle.Bold);
         body.Controls.Add(title);
-        body.Controls.Add(deviceStatus);
-        body.Controls.Add(WithButton(deviceList, disconnect, "Connected devices", fieldHeight: 66));
-        body.Controls.Add(touchControl);
+        var devicesCard = Section(body, "Android displays");
+        deviceStatus.Margin = new Padding(0, 1, 0, 5);
+        devicesCard.Controls.Add(deviceStatus);
+        devicesCard.Controls.Add(WithButton(deviceList, disconnect, "Connected devices", fieldHeight: 64));
+        devicesCard.Controls.Add(touchControl);
 
         var settings = ActionButton("Display settings");
         settings.Click += (_, _) => OpenDisplaySettings();
-        body.Controls.Add(WithButton(displays, detect, "Display"));
-        body.Controls.Add(WithButton(networks, null, "Network adapter"));
-        body.Controls.Add(WithButton(profiles, null, "Stream quality"));
 
-        var actions = new FlowLayoutPanel
+        var fingerprint = ActionButton("Pair Android viewer");
+        fingerprint.Click += (_, _) => MessageBox.Show(this,
+            "Compare this pairing code with the Android viewer. Confirm on Android only if both codes match.\n\n" +
+            string.Join(" ", Enumerable.Range(0, 4).Select(index => HostCertificate.Fingerprint.Substring(index * 4, 4))) +
+            "\n\nFull certificate fingerprint for browser verification:\n" + HostCertificate.Fingerprint,
+            "Pair Android viewer");
+        devicesCard.Controls.Add(ButtonRow(fingerprint, settings));
+
+        var networkCard = Section(body, "Connection settings");
+        var connectionFields = new TableLayoutPanel
         {
-            AutoSize = true, Dock = DockStyle.Fill, WrapContents = false, Margin = new Padding(0, 3, 0, 14)
+            AutoSize = true, Dock = DockStyle.Top, Margin = Padding.Empty, ColumnCount = 2
         };
-        actions.Controls.Add(share);
-        actions.Controls.Add(settings);
-        body.Controls.Add(actions);
+        connectionFields.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 60));
+        connectionFields.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 40));
+        var adapter = WithButton(networks, null, "Network adapter");
+        adapter.Margin = new Padding(0, 5, 14, 7);
+        connectionFields.Controls.Add(adapter, 0, 0);
+        connectionFields.Controls.Add(WithButton(profiles, null, "Stream quality"), 1, 0);
+        networkCard.Controls.Add(connectionFields);
 
-        body.Controls.Add(new Panel { Height = 1, Dock = DockStyle.Top, BackColor = Surface });
-        status.Margin = new Padding(0, 11, 0, 0);
-        body.Controls.Add(status);
-        body.Controls.Add(WithButton(invite, copy, "Viewer link"));
-        body.Controls.Add(TextLabel("Open the link in a browser on the same trusted network.", Muted));
+        var browserCard = Section(body, "Browser sharing");
+        browserCard.Controls.Add(WithButton(displays, detect, "Display"));
+        browserCard.Controls.Add(ButtonRow(share));
+        status.Margin = new Padding(0, 6, 0, 0);
+        browserCard.Controls.Add(status);
+        browserCard.Controls.Add(WithButton(invite, copy, "Viewer link"));
 
         profiles.Items.AddRange(StreamProfile.All);
         profiles.SelectedIndex = 1;
@@ -444,6 +470,66 @@ internal sealed class HostWindow : Form
         Margin = new Padding(0, 4, 10, 0)
     };
 
+    private Control CreateFooter()
+    {
+        string version = typeof(HostWindow).Assembly
+            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion.Split('+')[0]
+            ?? Application.ProductVersion;
+        var footer = new TableLayoutPanel
+        {
+            AutoSize = true, Dock = DockStyle.Fill, ColumnCount = 2, Margin = Padding.Empty,
+            Padding = new Padding(28, 0, 28, 10), BackColor = Card
+        };
+        footer.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        footer.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        var divider = new Panel { Height = 1, Dock = DockStyle.Top, BackColor = Line, Margin = new Padding(0, 0, 0, 10) };
+        footer.Controls.Add(divider, 0, 0);
+        footer.SetColumnSpan(divider, 2);
+        footer.Controls.Add(TextLabel($"Version {version}", Muted), 0, 1);
+        var github = new LinkLabel
+        {
+            Text = "GitHub repository", AccessibleName = "OpenDesk GitHub repository",
+            AutoSize = true, Margin = Padding.Empty, LinkColor = Mint, ActiveLinkColor = Ink,
+            VisitedLinkColor = Mint
+        };
+        github.LinkClicked += (_, _) =>
+        {
+            try
+            {
+                Process.Start(new ProcessStartInfo(RepositoryUrl) { UseShellExecute = true })?.Dispose();
+            }
+            catch (System.ComponentModel.Win32Exception error)
+            {
+                MessageBox.Show(this, error.Message, Text, MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        };
+        footer.Controls.Add(github, 1, 1);
+        return footer;
+    }
+
+    private static TableLayoutPanel Section(TableLayoutPanel parent, string title)
+    {
+        var card = new TableLayoutPanel
+        {
+            AutoSize = true, Dock = DockStyle.Top, ColumnCount = 1, BackColor = Card,
+            Padding = new Padding(16, 12, 16, 12), Margin = new Padding(0, 10, 0, 0)
+        };
+        card.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        card.Controls.Add(TextLabel(title, Ink, bottom: 4, bold: true));
+        parent.Controls.Add(card);
+        return card;
+    }
+
+    private static Control ButtonRow(params Button[] buttons)
+    {
+        var row = new FlowLayoutPanel
+        {
+            AutoSize = true, Dock = DockStyle.Top, WrapContents = false, Margin = new Padding(0, 3, 0, 0)
+        };
+        row.Controls.AddRange(buttons);
+        return row;
+    }
+
     private static Label TextLabel(string text, Color color, int bottom = 0, bool bold = false) => new()
     {
         AutoSize = true, MaximumSize = new Size(530, 0), Text = text, ForeColor = color,
@@ -461,6 +547,7 @@ internal sealed class HostWindow : Form
             Margin = new Padding(0, 0, 10, 0), Padding = new Padding(8, 0, 8, 0)
         };
         button.FlatAppearance.BorderSize = 0;
+        button.FlatAppearance.MouseOverBackColor = primary ? Color.FromArgb(172, 248, 222) : Line;
         return button;
     }
 

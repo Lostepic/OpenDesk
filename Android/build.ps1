@@ -13,7 +13,7 @@ $project = Split-Path $PSScriptRoot
 $buildRoot = (New-Item -ItemType Directory -Force (Join-Path $project 'obj\android')).FullName
 $build = (New-Item -ItemType Directory (Join-Path $buildRoot ([Guid]::NewGuid().ToString()))).FullName
 $dist = (New-Item -ItemType Directory -Force (Join-Path $project 'dist')).FullName
-$output = Join-Path $dist 'OpenDesk-Viewer-0.5.0.apk'
+$output = Join-Path $dist 'OpenDesk-Viewer-0.7.1.apk'
 
 function Invoke-BuildTool([string]$binary, [string[]]$arguments) {
     & $binary @arguments
@@ -35,7 +35,7 @@ try {
     Invoke-BuildTool $aapt @('link', '-I', $platform, '--manifest', $manifest, '-o', $unsigned, $resources)
     Invoke-BuildTool 'javac.exe' (@('--release', '8', '-classpath', $platform, '-d', $classes) + $source)
     $bytecode = (Get-ChildItem -LiteralPath $classes -File -Recurse -Filter '*.class').FullName
-    $d8Arguments = @('--min-api', '23', '--lib', $platform, '--output', $dex) + $bytecode
+    $d8Arguments = @('--min-api', '26', '--lib', $platform, '--output', $dex) + $bytecode
     Invoke-BuildTool (Join-Path $tools 'd8.bat') $d8Arguments
 
     Add-Type -AssemblyName System.IO.Compression.FileSystem

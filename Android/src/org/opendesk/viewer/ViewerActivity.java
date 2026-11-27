@@ -1,10 +1,21 @@
 package org.opendesk.viewer;
 
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.Context;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.net.Uri;
+import android.net.http.SslCertificate;
+import android.net.http.SslError;
+import android.webkit.SslErrorHandler;
+import javax.net.ssl.HttpsURLConnection;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.X509TrustManager;
+import java.security.GeneralSecurityException;
+import java.security.MessageDigest;
+import java.security.cert.CertificateException;
+import java.security.cert.X509Certificate;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
@@ -50,13 +61,16 @@ import java.util.concurrent.Executors;
 import java.util.regex.Pattern;
 
 public final class ViewerActivity extends Activity {
+    private interface HostSelection {
+        void select(String address);
+    }
     private static final int BACKGROUND = Color.rgb(18, 34, 38);
     private static final int TEXT = Color.rgb(234, 247, 243);
     private static final int MUTED = Color.rgb(169, 189, 188);
     private static final int MINT = Color.rgb(138, 239, 207);
     private static final int DISCOVERY_PORT = 47825;
     private static final Pattern ADDRESS = Pattern.compile("(?:[0-9]{1,3}\\.){3}[0-9]{1,3}");
-    private static final Pattern INVITE = Pattern.compile("http://([0-9.]+):4782[67]/#[a-f0-9]{32}");
+    private static final Pattern INVITE = Pattern.compile("https://([0-9.]+):4782[67]/#[a-f0-9]{32}");
     private static final Pattern HOST_ID = Pattern.compile("[a-f0-9]{32}");
 
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
@@ -67,6 +81,7 @@ public final class ViewerActivity extends Activity {
     private String hostId;
     private String activeInvite;
     private String deviceKey;
+    private volatile String certificatePin;
     private int screen;
     private int retryDelay = 1800;
     private boolean reconnectEnabled;
@@ -81,21 +96,22 @@ public final class ViewerActivity extends Activity {
         getWindow().setNavigationBarColor(BACKGROUND);
         lastAddress = getPreferences(MODE_PRIVATE).getString("address", "");
         hostId = getPreferences(MODE_PRIVATE).getString("host", "");
+        certificatePin = getPreferences(MODE_PRIVATE).getString("certificate-pin", "");
         reconnectEnabled = getPreferences(MODE_PRIVATE).getBoolean("reconnect", false) &&
-            HOST_ID.matcher(hostId).matches();
-        deviceKey = getPreferences(MODE_PRIVATE).getString("device", "");
+            HOST_ID.matcher(hostId).matches() && validPin(certificatePin);
+        deviceKey = getPreferences(MODE_PRIVATE).getString("tls-device", "");
         if (deviceKey.isEmpty()) {
-            byte[] random = new byte[16];
+            byte[] random = new byte[32];
             new java.security.SecureRandom().nextBytes(random);
             StringBuilder hex = new StringBuilder(32);
             for (byte value : random)
                 hex.append(Character.forDigit((value & 255) >> 4, 16))
                     .append(Character.forDigit(value & 15, 16));
             deviceKey = hex.toString();
-            getPreferences(MODE_PRIVATE).edit().putString("device", deviceKey).apply();
+            getPreferences(MODE_PRIVATE).edit().putString("tls-device", deviceKey).remove("device").apply();
         }
         activeInvite = state == null ? null : state.getString("activeInvite");
-        if (activeInvite != null && validInvite(activeInvite, lastAddress)) {
+        if (activeInvite != null && validPin(certificatePin) && validInvite(activeInvite, lastAddress)) {
             openViewer(activeInvite);
         } else if (reconnectEnabled) {
             showWaiting();
@@ -151,7 +167,6 @@ public final class ViewerActivity extends Activity {
         address.setHint("192.168.1.10");
         address.setText(lastAddress);
         panel.addView(address, new LinearLayout.LayoutParams(-1, -2));
-
         Button connect = new Button(this);
         connect.setText("Connect");
         connect.setTextColor(Color.rgb(13, 38, 33));
@@ -160,7 +175,7 @@ public final class ViewerActivity extends Activity {
         buttonLayout.topMargin = dp(11);
         panel.addView(connect, buttonLayout);
 
-        java.util.function.Consumer<String> select = ip -> {
+        HostSelection connectVerified = ip -> {
             if (!validAddress(ip)) {
                 status.setText("Enter the Windows PC's IPv4 address.");
                 address.requestFocus();
@@ -189,7 +204,43 @@ public final class ViewerActivity extends Activity {
                 }
             });
         };
-        Runnable submit = () -> select.accept(address.getText().toString().trim());
+        HostSelection select = ip -> {
+            if (!validAddress(ip)) {
+                connectVerified.select(ip);
+                return;
+            }
+            setControls(computers, refresh, address, connect, false);
+            status.setText("Checking the PC’s identity…");
+            worker.execute(() -> {
+                String candidate = inspectCertificate(ip);
+                runOnUiThread(() -> {
+                    if (version != screen || isDestroyed()) return;
+                    Runnable reset = () -> setControls(computers, refresh, address, connect, true);
+                    if (!validPin(candidate)) {
+                        status.setText("Could not verify the PC. Check OpenDesk and the local network.");
+                        reset.run();
+                        return;
+                    }
+                    if (candidate.equals(certificatePin)) {
+                        connectVerified.select(ip);
+                        return;
+                    }
+                    String code = candidate.substring(0, 16).replaceAll("(.{4})(?!$)", "$1 ");
+                    status.setText("Confirm the PC’s pairing code.");
+                    new AlertDialog.Builder(this)
+                        .setTitle("Confirm this PC")
+                        .setMessage("Open Pair Android viewer on the PC. Continue only if both screens show this code.\n\n" + code)
+                        .setPositiveButton("Code matches", (dialog, which) -> {
+                            certificatePin = candidate;
+                            connectVerified.select(ip);
+                        })
+                        .setNegativeButton("Cancel", (dialog, which) -> reset.run())
+                        .setOnCancelListener(dialog -> reset.run())
+                        .show();
+                });
+            });
+        };
+        Runnable submit = () -> select.select(address.getText().toString().trim());
         connect.setOnClickListener(view -> submit.run());
         address.setOnEditorActionListener((view, action, event) -> {
             if (action != EditorInfo.IME_ACTION_GO) return false;
@@ -211,7 +262,7 @@ public final class ViewerActivity extends Activity {
                     for (Map.Entry<String, String> host : hosts.entrySet()) {
                         Button item = new Button(this);
                         item.setText(host.getValue() + "  ·  " + host.getKey());
-                        item.setOnClickListener(view -> select.accept(host.getKey()));
+                        item.setOnClickListener(view -> select.select(host.getKey()));
                         computers.addView(item, new LinearLayout.LayoutParams(-1, -2));
                     }
                 });
@@ -228,6 +279,7 @@ public final class ViewerActivity extends Activity {
         hostId = reply.host;
         reconnectEnabled = HOST_ID.matcher(hostId).matches();
         getPreferences(MODE_PRIVATE).edit().putString("address", ip).putString("host", hostId)
+            .putString("certificate-pin", certificatePin)
             .putBoolean("reconnect", reconnectEnabled).apply();
     }
 
@@ -305,7 +357,7 @@ public final class ViewerActivity extends Activity {
         });
     }
 
-    private static String findRememberedHost(String address, String expected) {
+    private String findRememberedHost(String address, String expected) {
         if (validAddress(address) && expected.equals(readIdentity(address)))
             return address;
         for (String candidate : discover().keySet()) {
@@ -315,11 +367,10 @@ public final class ViewerActivity extends Activity {
         return null;
     }
 
-    private static String readIdentity(String address) {
+    private String readIdentity(String address) {
         HttpURLConnection request = null;
         try {
-            request = (HttpURLConnection) new URL("http://" + address + ":" + DISCOVERY_PORT + "/identity")
-                .openConnection(java.net.Proxy.NO_PROXY);
+            request = pinnedConnection(address, "/identity");
             request.setInstanceFollowRedirects(false);
             request.setConnectTimeout(1200);
             request.setReadTimeout(1200);
@@ -368,6 +419,21 @@ public final class ViewerActivity extends Activity {
         surface.addView(back, backPosition);
 
         browser.setWebViewClient(new WebViewClient() {
+            @Override
+            public void onReceivedSslError(WebView view, SslErrorHandler handler, SslError error) {
+                Uri failed = Uri.parse(error.getUrl());
+                Uri expected = Uri.parse(invite);
+                byte[] encoded = SslCertificate.saveState(error.getCertificate()).getByteArray("x509-certificate");
+                if (viewer == browser && "https".equals(failed.getScheme()) &&
+                    expected.getHost().equals(failed.getHost()) && expected.getPort() == failed.getPort() &&
+                    matchesCertificate(encoded, certificatePin)) {
+                    handler.proceed();
+                } else {
+                    handler.cancel();
+                    reportConnectionError(browser);
+                }
+            }
+
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, String url) {
                 return handleViewerNavigation(view, invite, url);
@@ -620,8 +686,7 @@ public final class ViewerActivity extends Activity {
 
     private HttpURLConnection openBrokerRequest(String ip, String method, int readTimeout)
         throws java.io.IOException {
-        HttpURLConnection request = (HttpURLConnection) new URL("http://" + ip + ":" +
-            DISCOVERY_PORT + "/connect").openConnection(java.net.Proxy.NO_PROXY);
+        HttpURLConnection request = pinnedConnection(ip, "/connect");
         request.setConnectTimeout(Math.min(4500, readTimeout));
         request.setReadTimeout(readTimeout);
         request.setInstanceFollowRedirects(false);
@@ -630,6 +695,90 @@ public final class ViewerActivity extends Activity {
         request.setRequestProperty("X-OpenDesk-Device", deviceKey);
         request.setRequestProperty("Content-Length", "0");
         return request;
+    }
+
+    private static boolean validPin(String pin) {
+        return pin.matches("[0-9A-F]{64}");
+    }
+
+    private static boolean matchesCertificate(byte[] encoded, String pin) {
+        if (encoded == null || !validPin(pin)) return false;
+        try {
+            byte[] expected = new byte[32];
+            for (int i = 0; i < expected.length; i++)
+                expected[i] = (byte)Integer.parseInt(pin.substring(i * 2, i * 2 + 2), 16);
+            return MessageDigest.isEqual(MessageDigest.getInstance("SHA-256").digest(encoded), expected);
+        } catch (GeneralSecurityException error) {
+            return false;
+        }
+    }
+
+    private HttpsURLConnection pinnedConnection(String address, String path) throws java.io.IOException {
+        return tlsConnection(address, path, null);
+    }
+
+    private String inspectCertificate(String address) {
+        String[] observed = { "" };
+        HttpsURLConnection request = null;
+        try {
+            request = tlsConnection(address, "/identity", certificate -> {
+                byte[] hash = MessageDigest.getInstance("SHA-256").digest(certificate.getEncoded());
+                StringBuilder hex = new StringBuilder(64);
+                for (byte value : hash)
+                    hex.append(String.format(java.util.Locale.ROOT, "%02X", value & 255));
+                observed[0] = hex.toString();
+            });
+            request.setConnectTimeout(3500);
+            request.setReadTimeout(3500);
+            request.connect();
+        } catch (java.io.IOException expected) {
+            // The inspection handshake always rejects the certificate and sends no HTTP request.
+        } finally {
+            if (request != null) request.disconnect();
+        }
+        return observed[0];
+    }
+
+    private interface CertificateObserver {
+        void inspect(X509Certificate certificate) throws GeneralSecurityException;
+    }
+
+    private HttpsURLConnection tlsConnection(String address, String path, CertificateObserver observer) throws java.io.IOException {
+        final String pin = certificatePin;
+        if (observer == null && !validPin(pin)) throw new java.io.IOException("A PC fingerprint is required.");
+        try {
+            SSLContext context = SSLContext.getInstance("TLS");
+            context.init(null, new X509TrustManager[] { new X509TrustManager() {
+                public X509Certificate[] getAcceptedIssuers() { return new X509Certificate[0]; }
+                public void checkClientTrusted(X509Certificate[] chain, String auth) throws CertificateException {
+                    throw new CertificateException("Client certificates are unsupported.");
+                }
+                public void checkServerTrusted(X509Certificate[] chain, String auth) throws CertificateException {
+                    if (observer != null) {
+                        try {
+                            if (chain != null && chain.length != 0) {
+                                chain[0].checkValidity();
+                                observer.inspect(chain[0]);
+                            }
+                        } catch (GeneralSecurityException error) {
+                            throw new CertificateException(error);
+                        }
+                        throw new CertificateException("Certificate inspection only.");
+                    }
+                    if (chain == null || chain.length == 0 || !matchesCertificate(chain[0].getEncoded(), pin))
+                        throw new CertificateException("OpenDesk fingerprint mismatch.");
+                    chain[0].checkValidity();
+                }
+            } }, null);
+            HttpsURLConnection request = (HttpsURLConnection) new URL("https://" + address + ":" +
+                DISCOVERY_PORT + path).openConnection(java.net.Proxy.NO_PROXY);
+            request.setSSLSocketFactory(context.getSocketFactory());
+            // The manually verified fingerprint identifies the host across LAN address changes.
+            request.setHostnameVerifier((hostname, session) -> address.equals(hostname));
+            return request;
+        } catch (GeneralSecurityException error) {
+            throw new java.io.IOException("Could not configure OpenDesk TLS.", error);
+        }
     }
 
     private static final class HostReply extends java.io.IOException {
