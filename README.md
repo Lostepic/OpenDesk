@@ -9,6 +9,7 @@ OpenDesk extends your Windows desktop to Android devices over your local network
 ## Why OpenDesk?
 
 I wanted to extend my Windows desktop onto my Echo Show devices, which I had flashed with Android, and use them as external displays. The other solutions I found were paid or offered only a free trial, so I built OpenDesk with the help of AI.
+
 ## Downloads
 
 Get **OpenDesk-0.6.0-win-x64.zip** and **OpenDesk-Viewer-0.5.0.apk** from [Releases](https://github.com/Lostepic/OpenDesk/releases). The Windows download is self-contained. Version numbers differ because the Android viewer and host are released independently.
@@ -58,6 +59,7 @@ Retain the signing key securely to install future builds over existing installat
 ## AI and contributions
 
 OpenDesk was made with the help of AI and is provided without guarantees or warranty. Pull requests, fixes, improvements and other contributions are welcome.
+
 ## License
 
 OpenDesk is available under the [MIT License](LICENSE). The separate Virtual Display Driver and .NET runtime have their own licenses. Runtime notices are included in the Windows download.
