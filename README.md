@@ -19,6 +19,14 @@ Get **OpenDesk-0.6.0-win-x64.zip** and **OpenDesk-Viewer-0.5.0.apk** from [Relea
 - Adjust streaming quality on the host while viewers are connected.
 - Share a selected display with a browser using a session link.
 
+## Screenshots
+
+The Windows host shows connected viewers, display selection and streaming quality. Addresses and device names in these screenshots are examples.
+
+![OpenDesk Windows host with sample connection details](docs/images/windows-host.png)
+
+![Connected viewers and touch control in OpenDesk](docs/images/connected-devices.png)
+
 ## Getting started
 
 1. On Windows 10 or 11, install the signed [Virtual Display Driver](https://github.com/VirtualDrivers/Virtual-Display-Driver) and configure a virtual monitor for each viewer. Add the Android device’s native resolution to its driver configuration when needed.
