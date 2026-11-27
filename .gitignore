@@ -1,0 +1,10 @@
+bin/
+obj/
+dist/
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.dpapi
+.env
+.env.*

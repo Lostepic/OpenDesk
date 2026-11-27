@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>OpenDesk Viewer</title>
+  <link rel="stylesheet" href="/viewer.css">
+  <script src="/viewer.js" defer></script>
+</head>
+<body>
+  <header class="toolbar">
+    <div class="brand"><span class="mark" aria-hidden="true"></span>OpenDesk</div>
+    <div class="connection" data-state="offline">
+      <span class="light" aria-hidden="true"></span>
+      <span id="status" role="status">Waiting</span>
+      <span id="peer" hidden></span>
+      <span id="resolution" hidden></span>
+    </div>
+    <button id="fullscreen" type="button" hidden>Full screen</button>
+    <button id="disconnect" type="button" hidden>Disconnect</button>
+  </header>
+  <button id="reveal-controls" type="button" hidden>Show controls</button>
+  <main id="stage">
+    <img class="display-frame" alt="Shared Windows display" hidden>
+    <img class="display-frame" alt="Shared Windows display" hidden>
+    <div id="notice" class="notice">
+      <h1 id="heading">Open a viewer link</h1>
+      <p id="detail">Copy a viewer link from OpenDesk on your Windows PC and open it here.</p>
+      <button id="retry" type="button" hidden>Reconnect</button>
+    </div>
+  </main>
+</body>
+</html>
