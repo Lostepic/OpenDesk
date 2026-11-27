@@ -2,7 +2,7 @@
 
 **Turn Android devices into wireless Windows displays.**
 
-![License](https://img.shields.io/badge/license-MIT-2ea44f) ![Windows](https://img.shields.io/badge/host-Windows%2010%2F11-0078d4) ![Android](https://img.shields.io/badge/viewer-Android%206%2B-3ddc84) ![Release](https://img.shields.io/github/v/release/Lostepic/OpenDesk)
+![License](https://img.shields.io/badge/license-MIT-2ea44f) ![Windows](https://img.shields.io/badge/host-Windows%2010%2F11-0078d4) ![Android](https://img.shields.io/badge/viewer-Android%208%2B-3ddc84) ![Release](https://img.shields.io/github/v/release/Lostepic/OpenDesk)
 
 OpenDesk extends your Windows desktop to Android devices over your local network. It is free, open source, and works without an account or cloud service. The Windows host uses the separately installed open-source Virtual Display Driver to create up to two independent displays.
 
@@ -38,15 +38,17 @@ The Windows host shows connected viewers, display selection and streaming qualit
 3. Install the viewer APK on Android 8.0 or later with Android System WebView. Open **OpenDesk Viewer**, select your PC, and compare the code shown under **Pair Android viewer** on Windows and tap **Code matches** on Android. Approve each device on Windows. Devices approved on older versions need to pair again.
 4. Arrange the new screens in Windows Display Settings. OpenDesk remembers the positions. Touch **Show controls** to reveal viewer controls in full-screen mode.
 
-The host and viewers need to be on the same local subnet. Allow the host on a Private Windows network for UDP 47825 and TCP 47825–47827. Browser sharing uses TCP 47824. In 0.7.0, pairing credentials, video and touch use TLS. The Android app verifies the host certificate against the certificate saved during pairing. Verify the same fingerprint before accepting the self-signed certificate in a browser. Discovery uses UDP to advertise the host and port. Earlier releases use unencrypted transport. Approved viewers can control Windows while touch control is enabled. Keep your Android app signing key private when building your own updates.
+The host and viewers need to be on the same local subnet. Allow the host on a Private Windows network for UDP 47825 and TCP 47825–47827. Browser sharing uses TCP 47824. Starting with the 0.7 series, pairing credentials, video and touch use TLS. The Android app verifies the host certificate against the certificate saved during pairing. Verify the same fingerprint before accepting the self-signed certificate in a browser. Discovery uses UDP to advertise the host and port. Earlier releases use unencrypted transport. Approved viewers can control Windows while touch control is enabled. Keep your Android app signing key private when building your own updates.
 
 ## Build
 
 Install the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) and build the Windows host on Windows:
 
 ```powershell
-dotnet publish .\OpenDesk.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:DebugType=None -o .\dist\win-x64
+dotnet publish .\Windows\OpenDesk.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:DebugType=None -o .\dist\win-x64
 ```
+
+`Windows/` contains the host and browser viewer. `Android/` contains the native viewer. `docs/images/` contains the README screenshots.
 
 For Android, install a JDK, Android 35 platform and Build Tools 35.0.0. Create a PKCS#12 signing key with alias `opendesk-viewer`, set `OPENDESK_SIGNING_PASSWORD` in your shell and run:
 
