@@ -307,6 +307,8 @@ internal sealed class ShareSession : IAsyncDisposable
     private async Task CaptureAsync()
     {
         DesktopCapture? capture = null;
+        GraphicsCapture? graphics = null;
+        byte[]? lastFrame = null;
         StreamProfile activeProfile = quality?.Invoke() ?? profile;
         Rectangle captureBounds = Rectangle.Empty;
         long? unavailableSince = null;
@@ -315,11 +317,23 @@ internal sealed class ShareSession : IAsyncDisposable
             using var timer = new PeriodicTimer(TimeSpan.FromSeconds(1.0 / activeProfile.Fps));
             Stopwatch topology = Stopwatch.StartNew();
             Stopwatch published = Stopwatch.StartNew();
+            Stopwatch frameActivity = Stopwatch.StartNew();
             while (await timer.WaitForNextTickAsync(ending.Token))
             {
+                if (Viewers == 0)
+                {
+                    graphics?.Dispose();
+                    graphics = null;
+                    capture?.Dispose();
+                    capture = null;
+                    lock (frameLock)
+                        latest = null;
+                    continue;
+                }
+
                 StreamProfile selectedProfile = quality?.Invoke() ?? profile;
                 bool newProfile = activeProfile != selectedProfile;
-                if (capture is null || newProfile || topology.ElapsedMilliseconds >= 1000)
+                if ((capture is null && graphics is null) || newProfile || topology.ElapsedMilliseconds >= 1000)
                 {
                     var current = target is { } monitor ? VirtualDesktop.GetDisplay(monitor) :
                         DisplayChoice.GetActive().FirstOrDefault(item =>
@@ -335,11 +349,15 @@ internal sealed class ShareSession : IAsyncDisposable
                         throw new InvalidOperationException("The selected display changed. Choose it again to resume.");
                     unavailableSince = null;
                     bool newDisplay = captureBounds != current.Bounds || current.DeviceName != latestDisplay.DeviceName;
-                    if (capture is null || newDisplay || newProfile)
+                    if ((capture is null && graphics is null) || newDisplay || newProfile)
                     {
                         if (newDisplay) touch?.Cancel();
                         capture?.Dispose();
-                        capture = new DesktopCapture(current.Bounds, selectedProfile);
+                        graphics?.Dispose();
+                        graphics = target is null ? null : TryStartGraphicsCapture(current, selectedProfile);
+                        capture = graphics is null ? new DesktopCapture(current.Bounds, selectedProfile) : null;
+                        lastFrame = null;
+                        frameActivity.Restart();
                         activeProfile = selectedProfile;
                         timer.Period = TimeSpan.FromSeconds(1.0 / activeProfile.Fps);
                         captureBounds = current.Bounds;
@@ -355,14 +373,45 @@ internal sealed class ShareSession : IAsyncDisposable
                 else
                     touch?.CancelIfIdle();
 
-                if (Viewers == 0)
+                // Avoid desktop readback while a window is being dragged on another screen.
+                // The cached frame still supplies the normal stream keepalive.
+                bool hold = target is not null && lastFrame is not null && Native.IsMovingWindowOutside(captureBounds);
+                byte[]? previousFrame = lastFrame;
+                if (graphics is not null)
                 {
-                    lock (frameLock)
-                        latest = null;
-                    continue;
+                    try
+                    {
+                        int captureFps = hold ? 8 : frameActivity.ElapsedMilliseconds < 750 ? activeProfile.Fps : 12;
+                        graphics.SetFrameRate(captureFps);
+                        if (!hold)
+                            lastFrame = await graphics.GrabAsync(lastFrame is null) ?? lastFrame;
+                        if (lastFrame is null && frameActivity.ElapsedMilliseconds >= 2500)
+                            throw new InvalidOperationException("Windows Graphics Capture did not deliver an initial frame.");
+                    }
+                    catch (Exception error) when (IsGraphicsCaptureFailure(error))
+                    {
+                        Trace.TraceWarning("OpenDesk switched to compatible capture ({0}).", error.GetType().Name);
+                        graphics.Dispose();
+                        graphics = null;
+                        capture = new DesktopCapture(captureBounds, activeProfile);
+                        frameActivity.Restart();
+                    }
                 }
-
-                byte[] frame = capture.Grab();
+                if (!hold && capture is not null)
+                    lastFrame = capture.Grab();
+                if (lastFrame is not { } frame)
+                    continue;
+                if (!ReferenceEquals(previousFrame, frame))
+                    frameActivity.Restart();
+                if (!hold && target is not null)
+                {
+                    // Static virtual screens need fewer readbacks. A fresh frame restores the selected cap.
+                    int idleFps = graphics is null ? 8 : 12;
+                    int fps = frameActivity.ElapsedMilliseconds < 750 ? activeProfile.Fps : idleFps;
+                    TimeSpan period = TimeSpan.FromSeconds(1.0 / fps);
+                    if (timer.Period != period)
+                        timer.Period = period;
+                }
                 lock (frameLock)
                 {
                     if (ReferenceEquals(frame, latest?.Bytes) && published.ElapsedMilliseconds < 1500)
@@ -382,9 +431,24 @@ internal sealed class ShareSession : IAsyncDisposable
         }
         finally
         {
+            graphics?.Dispose();
             capture?.Dispose();
         }
     }
+
+    private static GraphicsCapture? TryStartGraphicsCapture(DisplayChoice display, StreamProfile profile)
+    {
+        try { return new GraphicsCapture(display, profile); }
+        catch (Exception error) when (IsGraphicsCaptureFailure(error))
+        {
+            Trace.TraceWarning("OpenDesk could not start Windows Graphics Capture ({0}).", error.GetType().Name);
+            return null;
+        }
+    }
+
+    private static bool IsGraphicsCaptureFailure(Exception error) =>
+        error is InvalidOperationException or NotSupportedException or UnauthorizedAccessException or
+            InvalidCastException or System.Runtime.InteropServices.ExternalException;
 
     public async ValueTask DisposeAsync()
     {

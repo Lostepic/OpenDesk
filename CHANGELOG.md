@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.7.4 (Windows source)
+
+- Use per-monitor Windows Graphics Capture for Android streams and fall back to GDI where capture is unavailable.
+- Skip identical frames and reduce capture work on static displays.
+- Document the tested signed virtual display driver build with the multi-monitor stutter fix and Windows sign-in setup.
+
+## 0.7.3 (Windows host)
+
+- Hold the last frame on each Android display while a window is dragged on another monitor.
+
 ## 0.7.2
 
 - Reorganized the Windows host into Android displays, connection settings and browser sharing sections.

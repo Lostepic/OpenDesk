@@ -168,6 +168,28 @@ internal sealed class DesktopCapture : IDisposable
 
 internal static class Native
 {
+    [StructLayout(LayoutKind.Sequential)]
+    private struct GuiThreadInfo
+    {
+        internal int Size, Flags;
+        internal nint Active, Focus, Capture, MenuOwner, MoveSize, Caret;
+        internal int Left, Top, Right, Bottom;
+    }
+
+    internal static bool IsMovingWindowOutside(Rectangle display)
+    {
+        const int inMoveSize = 0x2;
+        var gui = new GuiThreadInfo { Size = Marshal.SizeOf<GuiThreadInfo>() };
+        if (!GetGUIThreadInfo(0, ref gui) || (gui.Flags & inMoveSize) == 0)
+            return false;
+        var cursor = new CursorInfo { Size = Marshal.SizeOf<CursorInfo>() };
+        return GetCursorInfo(ref cursor) && !display.Contains(cursor.X, cursor.Y);
+    }
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetGUIThreadInfo(uint threadId, ref GuiThreadInfo info);
+
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     internal struct DisplayDevice
     {
